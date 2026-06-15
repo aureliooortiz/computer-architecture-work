@@ -8,8 +8,8 @@
 #include <limits.h>
 #include <x86intrin.h>
 
-volatile int flag = 0; // Garante que o compilador não aplique otimizações
-//struct timespec t1, t2;
+atomic_int ready = 0;
+atomic_int flag = 0; // Garante que o compilador não aplique otimizações
 unsigned long long t1, t2;
 
 void defAfinidade (int nucleoID) {
@@ -28,7 +28,10 @@ void *nucA (void *arg) {
 
 	nucleoID = *(int *)arg;
 	defAfinidade(nucleoID);
-
+	
+	while (atomic_load(&ready) == 0);
+	
+	_mm_lfence();
 	t1 = __rdtsc();
 	atomic_store(&flag, 1);
 	
@@ -41,7 +44,10 @@ void *nucB (void *arg) {
 	nucleoID = *(int *)arg;
 	defAfinidade(nucleoID);
 	
+	atomic_store(&ready, 1);
+	
 	while(atomic_load(&flag) == 0);
+	_mm_lfence();
 	t2 = __rdtsc();
 	
 	return NULL;
@@ -51,7 +57,6 @@ int main() {
 	pthread_t thread1, thread2;
 	int core0;
 	int core1;
-	double dt;
 	
 	core0 = 0;
 	core1 = 1;
@@ -62,7 +67,7 @@ int main() {
 	pthread_join(thread1, NULL);
 	pthread_join(thread2, NULL);
 	
-	printf("%llu\n%llu\n", t1, t2);
+	printf("tempo que leva para uma escrita feita por um núcleo se tornar visível para outro núcleo: %.2f ns\n", ((t2 - t1)/2.0));
 	
 	return 0;
 }
